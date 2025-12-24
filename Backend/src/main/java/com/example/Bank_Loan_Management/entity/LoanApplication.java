@@ -56,6 +56,9 @@ public class LoanApplication {
 
     private BigDecimal pendingAmount;
 
+    @Column(precision = 5, scale = 2)
+    private BigDecimal interestRate;
+
     public enum Status {
         APPLIED, VERIFIED, APPROVED, REJECTED
     }

@@ -1,7 +1,8 @@
 package com.example.Bank_Loan_Management.service;
 
-import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
+
+import org.springframework.stereotype.Service;
 
 @Service
 public class CreditScoringService {
@@ -38,7 +39,19 @@ public class CreditScoringService {
     }
 
     public boolean isEligible(int creditScore, BigDecimal amount) {
-        // Simple eligibility: score > 600 and amount < 50000
-        return creditScore > 600 && amount.compareTo(BigDecimal.valueOf(50000)) < 0;
+        // Simple eligibility: score > 400 and amount < 50000
+        return creditScore > 400 && amount.compareTo(BigDecimal.valueOf(50000)) < 0;
+    }
+
+    public BigDecimal getInterestRate(String purpose) {
+        switch (purpose.toLowerCase()) {
+            case "housing": return BigDecimal.valueOf(5.0);
+            case "education": return BigDecimal.valueOf(4.0);
+            case "personal": return BigDecimal.valueOf(9.0);
+            case "health": return BigDecimal.valueOf(7.0);
+            case "professional": return BigDecimal.valueOf(8.0);
+            case "car": return BigDecimal.valueOf(6.0);
+            default: return BigDecimal.valueOf(10.0);
+        }
     }
 }

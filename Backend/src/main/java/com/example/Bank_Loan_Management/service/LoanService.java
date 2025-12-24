@@ -80,8 +80,12 @@ public class LoanService {
 
         if (eligible) {
             application.setApprovedAmount(application.getAmount());
+            BigDecimal interestRate = creditScoringService.getInterestRate(application.getPurpose());
+            application.setInterestRate(interestRate);
+            BigDecimal interestAmount = application.getAmount().multiply(interestRate).divide(BigDecimal.valueOf(100));
+            BigDecimal totalAmount = application.getAmount().add(interestAmount);
             application.setPaidAmount(BigDecimal.ZERO);
-            application.setPendingAmount(application.getAmount());
+            application.setPendingAmount(totalAmount);
         }
 
         LoanApplication saved = loanApplicationRepository.save(application);
