@@ -28,6 +28,26 @@ public class BankLoanManagementApplication {
 					System.err.println("Failed to create default admin user: " + e.getMessage());
 				}
 			}
+
+			// Create default loan manager user if it doesn't exist
+			if (userRepository.findByUsername("loanmanager").isEmpty()) {
+				try {
+					authService.register("loanmanager", "loanmanager", "loanmanager@example.com", User.Role.LOAN_MANAGER);
+					System.out.println("Default loan manager user created: loanmanager/loanmanager");
+				} catch (Exception e) {
+					System.err.println("Failed to create default loan manager user: " + e.getMessage());
+				}
+			}
+
+			// Create default manager user if it doesn't exist
+			if (userRepository.findByUsername("manager").isEmpty()) {
+				try {
+					authService.register("manager", "manager", "manager@example.com", User.Role.MANAGER);
+					System.out.println("Default manager user created: manager/manager");
+				} catch (Exception e) {
+					System.err.println("Failed to create default manager user: " + e.getMessage());
+				}
+			}
 		};
 	}
 

@@ -7,21 +7,26 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.Bank_Loan_Management.entity.Document;
 import com.example.Bank_Loan_Management.entity.LoanApplication;
 import com.example.Bank_Loan_Management.entity.User;
+import com.example.Bank_Loan_Management.repository.DocumentRepository;
 import com.example.Bank_Loan_Management.repository.LoanApplicationRepository;
 
 @Service
 public class LoanService {
 
     private final LoanApplicationRepository loanApplicationRepository;
+    private final DocumentRepository documentRepository;
     private final CreditScoringService creditScoringService;
     private final NotificationService notificationService;
 
     public LoanService(LoanApplicationRepository loanApplicationRepository,
+                       DocumentRepository documentRepository,
                        CreditScoringService creditScoringService,
                        NotificationService notificationService) {
         this.loanApplicationRepository = loanApplicationRepository;
+        this.documentRepository = documentRepository;
         this.creditScoringService = creditScoringService;
         this.notificationService = notificationService;
     }
@@ -47,6 +52,13 @@ public class LoanService {
 
         LoanApplication saved = loanApplicationRepository.save(application);
 
+        // Link existing documents to this loan application
+        List<Document> userDocuments = documentRepository.findByUserIdAndLoanApplicationIdIsNull(user.getId());
+        for (Document document : userDocuments) {
+            document.setLoanApplication(saved);
+            documentRepository.save(document);
+        }
+
         notificationService.sendLoanStatusUpdate(user.getId(), "APPLIED");
 
         return saved;
@@ -68,6 +80,25 @@ public class LoanService {
         LoanApplication saved = loanApplicationRepository.save(application);
 
         notificationService.sendLoanStatusUpdate(application.getUser().getId(), "REJECTED");
+
+        return saved;
+    }
+
+    @Transactional
+    public LoanApplication verifyLoanApplication(Long applicationId) {
+        LoanApplication application = loanApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Application not found"));
+
+        if (application.getStatus() != LoanApplication.Status.APPLIED) {
+            throw new RuntimeException("Application is not in APPLIED status");
+        }
+
+        application.setStatus(LoanApplication.Status.VERIFIED);
+        application.setDocumentsVerified(true);
+
+        LoanApplication saved = loanApplicationRepository.save(application);
+
+        notificationService.sendLoanStatusUpdate(application.getUser().getId(), "VERIFIED");
 
         return saved;
     }

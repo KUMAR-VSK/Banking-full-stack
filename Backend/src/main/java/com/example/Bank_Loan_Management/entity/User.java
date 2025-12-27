@@ -1,5 +1,7 @@
 package com.example.Bank_Loan_Management.entity;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -34,6 +36,9 @@ public class User {
 
     @Enumerated(EnumType.STRING)
     private Role role;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
 
     public enum Role {
         USER, LOAN_MANAGER, MANAGER, ADMIN

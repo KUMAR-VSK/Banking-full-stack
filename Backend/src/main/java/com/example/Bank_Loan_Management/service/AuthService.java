@@ -1,5 +1,6 @@
 package com.example.Bank_Loan_Management.service;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,7 @@ public class AuthService {
         } else {
             user.setRole(User.Role.USER);
         }
+        user.setCreatedAt(LocalDateTime.now());
 
         return userRepository.save(user);
     }
@@ -68,6 +70,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(password));
         user.setEmail(email);
         user.setRole(role);
+        user.setCreatedAt(LocalDateTime.now());
 
         return userRepository.save(user);
     }

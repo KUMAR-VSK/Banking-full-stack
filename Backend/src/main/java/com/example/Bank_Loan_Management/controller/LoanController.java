@@ -7,7 +7,10 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -207,6 +210,37 @@ public class LoanController {
     public ResponseEntity<List<Document>> getAllDocumentsForVerification() {
         List<Document> documents = documentService.getAllDocuments();
         return ResponseEntity.ok(documents);
+    }
+
+    @GetMapping("/loan-manager/documents/view/{id}")
+    public ResponseEntity<Resource> viewDocument(@PathVariable Long id) {
+        try {
+            Document document = documentService.getAllDocuments().stream()
+                    .filter(doc -> doc.getId().equals(id))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Document not found"));
+
+            Resource resource = documentService.downloadDocument(id);
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(document.getContentType()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + document.getFileName() + "\"")
+                    .body(resource);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/loan-manager/loans")
+    public ResponseEntity<List<LoanApplication>> getLoansForVerification() {
+        List<LoanApplication> loans = loanService.getAllLoans();
+        return ResponseEntity.ok(loans);
+    }
+
+    @PostMapping("/loan-manager/loans/verify/{id}")
+    public ResponseEntity<LoanApplication> verifyLoanApplication(@PathVariable Long id) {
+        LoanApplication application = loanService.verifyLoanApplication(id);
+        return ResponseEntity.ok(application);
     }
 
     // Manager endpoints
