@@ -2,6 +2,7 @@ package com.example.Bank_Loan_Management.controller;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,8 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.example.Bank_Loan_Management.entity.Document;
+import com.example.Bank_Loan_Management.entity.InterestRate;
 import com.example.Bank_Loan_Management.entity.LoanApplication;
 import com.example.Bank_Loan_Management.entity.User;
+import com.example.Bank_Loan_Management.repository.InterestRateRepository;
 import com.example.Bank_Loan_Management.repository.UserRepository;
 import com.example.Bank_Loan_Management.service.DocumentService;
 import com.example.Bank_Loan_Management.service.LoanService;
@@ -39,11 +42,13 @@ public class LoanController {
     private final LoanService loanService;
     private final UserRepository userRepository;
     private final DocumentService documentService;
+    private final InterestRateRepository interestRateRepository;
 
-    public LoanController(LoanService loanService, UserRepository userRepository, DocumentService documentService) {
+    public LoanController(LoanService loanService, UserRepository userRepository, DocumentService documentService, InterestRateRepository interestRateRepository) {
         this.loanService = loanService;
         this.userRepository = userRepository;
         this.documentService = documentService;
+        this.interestRateRepository = interestRateRepository;
     }
 
     // User endpoints
@@ -149,13 +154,24 @@ public class LoanController {
             }
 
             if (userDocuments.isEmpty()) {
-                logger.warn("User {} has no documents uploaded - rejecting application", user.getUsername());
-                return ResponseEntity.badRequest().body("Please upload at least one document before applying for loan. Documents found: " + userDocuments.size());
+                // Check if user has any previous loan applications
+                List<LoanApplication> previousLoans = loanService.getLoansByUser(user);
+                if (previousLoans.isEmpty()) {
+                    logger.warn("User {} has no documents uploaded and no previous loans - rejecting application", user.getUsername());
+                    return ResponseEntity.badRequest().body("Please upload at least one document before applying for loan.");
+                } else {
+                    logger.info("User {} has previous loans, allowing application without new documents", user.getUsername());
+                }
             }
 
             logger.info("Creating loan application for user {}", user.getUsername());
             LoanApplication application = loanService.applyForLoan(user, request.getAmount(), request.getTerm(), request.getPurpose());
             logger.info("Loan application created successfully: {} for user: {}", application.getId(), user.getUsername());
+
+            // Associate uploaded documents with the loan application
+            documentService.associateDocumentsWithLoan(user, application);
+            logger.info("Documents associated with loan application {}", application.getId());
+
             return ResponseEntity.ok(application);
 
         } catch (Exception e) {
@@ -166,25 +182,82 @@ public class LoanController {
     }
 
     @GetMapping("/user/loans")
-    public ResponseEntity<List<LoanApplication>> getMyLoans(@AuthenticationPrincipal UserDetails userDetails) {
+    public ResponseEntity<List<LoanSummaryDTO>> getMyLoans(@AuthenticationPrincipal UserDetails userDetails) {
         User user = userRepository.findByUsername(userDetails.getUsername())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         List<LoanApplication> loans = loanService.getLoansByUser(user);
-        return ResponseEntity.ok(loans);
+        List<LoanSummaryDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanSummaryDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser(),
+                        loan.getLoanManager(),
+                        loan.getManager()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
     }
 
     // Admin endpoints
     @GetMapping("/admin/loans")
-    public ResponseEntity<List<LoanApplication>> getAllLoans() {
+    public ResponseEntity<List<LoanSummaryDTO>> getAllLoans() {
         List<LoanApplication> loans = loanService.getAllLoans();
-        return ResponseEntity.ok(loans);
+        List<LoanSummaryDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanSummaryDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser(),
+                        loan.getLoanManager(),
+                        loan.getManager()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
     }
 
     @GetMapping("/admin/loans/status/{status}")
-    public ResponseEntity<List<LoanApplication>> getLoansByStatus(@PathVariable String status) {
+    public ResponseEntity<List<LoanSummaryDTO>> getLoansByStatus(@PathVariable String status) {
         LoanApplication.Status enumStatus = LoanApplication.Status.valueOf(status.toUpperCase());
         List<LoanApplication> loans = loanService.getLoansByStatus(enumStatus);
-        return ResponseEntity.ok(loans);
+        List<LoanSummaryDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanSummaryDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser(),
+                        loan.getLoanManager(),
+                        loan.getManager()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
     }
 
     @GetMapping("/admin/documents")
@@ -207,66 +280,183 @@ public class LoanController {
     }
 
     @GetMapping("/loan-manager/documents")
-    public ResponseEntity<List<Document>> getAllDocumentsForVerification() {
-        List<Document> documents = documentService.getAllDocuments();
-        return ResponseEntity.ok(documents);
+    public ResponseEntity<List<DocumentDTO>> getAllDocumentsForVerification() {
+        logger.info("Fetching all documents for verification");
+        try {
+            List<Document> documents = documentService.getAllDocuments();
+            logger.info("Found {} documents in database", documents.size());
+            List<DocumentDTO> documentDTOs = documents.stream()
+                    .map(doc -> new DocumentDTO(
+                            doc.getId(),
+                            doc.getUser().getId(),
+                            doc.getLoanApplication() != null ? doc.getLoanApplication().getId() : null,
+                            doc.getDocumentType(),
+                            doc.getFileName(),
+                            doc.getFilePath(),
+                            doc.getContentType(),
+                            doc.getFileSize(),
+                            doc.getStatus()
+                    ))
+                    .toList();
+            logger.info("Returning {} document DTOs", documentDTOs.size());
+            return ResponseEntity.ok(documentDTOs);
+        } catch (Exception e) {
+            logger.error("Error fetching documents for verification", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @GetMapping("/loan-manager/documents/view/{id}")
     public ResponseEntity<Resource> viewDocument(@PathVariable Long id) {
+        logger.info("Viewing document with ID: {}", id);
         try {
             Document document = documentService.getAllDocuments().stream()
                     .filter(doc -> doc.getId().equals(id))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Document not found"));
+            logger.info("Found document: {} (file: {})", document.getId(), document.getFileName());
 
             Resource resource = documentService.downloadDocument(id);
+            logger.info("Downloaded resource for document: {}", document.getFileName());
 
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(document.getContentType()))
                     .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + document.getFileName() + "\"")
                     .body(resource);
         } catch (Exception e) {
+            logger.error("Error viewing document with ID: {}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     @GetMapping("/loan-manager/loans")
-    public ResponseEntity<List<LoanApplication>> getLoansForVerification() {
+    public ResponseEntity<List<LoanManagerDTO>> getLoansForVerification() {
         List<LoanApplication> loans = loanService.getAllLoans();
-        return ResponseEntity.ok(loans);
+        List<LoanManagerDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanManagerDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser().getId(),
+                        loan.getUser().getUsername(),
+                        loan.getUser().getEmail()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
     }
 
     @PostMapping("/loan-manager/loans/verify/{id}")
-    public ResponseEntity<LoanApplication> verifyLoanApplication(@PathVariable Long id) {
-        LoanApplication application = loanService.verifyLoanApplication(id);
+    public ResponseEntity<LoanApplication> verifyLoanApplication(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        User loanManager = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        LoanApplication application = loanService.verifyLoanApplication(id, loanManager);
+        return ResponseEntity.ok(application);
+    }
+
+    @PostMapping("/loan-manager/loans/reject/{id}")
+    public ResponseEntity<LoanApplication> rejectLoanApplication(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        User loanManager = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        LoanApplication application = loanService.rejectLoanApplication(id, loanManager);
         return ResponseEntity.ok(application);
     }
 
     // Manager endpoints
     @PostMapping("/manager/loans/approve/{id}")
-    public ResponseEntity<LoanApplication> approveLoan(@PathVariable Long id) {
-        LoanApplication application = loanService.approveLoan(id);
+    public ResponseEntity<LoanApplication> approveLoan(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        User manager = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        LoanApplication application = loanService.approveLoan(id, manager);
         return ResponseEntity.ok(application);
     }
 
     @PostMapping("/manager/loans/reject/{id}")
-    public ResponseEntity<LoanApplication> rejectLoan(@PathVariable Long id) {
-        LoanApplication application = loanService.rejectLoan(id);
+    public ResponseEntity<LoanApplication> rejectLoan(@PathVariable Long id, @AuthenticationPrincipal UserDetails userDetails) {
+        User manager = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        LoanApplication application = loanService.rejectLoan(id, manager);
         return ResponseEntity.ok(application);
     }
 
     @GetMapping("/manager/loans")
-    public ResponseEntity<List<LoanApplication>> getLoansForApproval() {
+    public ResponseEntity<List<LoanManagerDTO>> getLoansForApproval() {
         List<LoanApplication> loans = loanService.getAllLoans();
-        return ResponseEntity.ok(loans);
+        List<LoanManagerDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanManagerDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser().getId(),
+                        loan.getUser().getUsername(),
+                        loan.getUser().getEmail()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
     }
 
     @GetMapping("/manager/loans/status/{status}")
-    public ResponseEntity<List<LoanApplication>> getLoansByStatusForApproval(@PathVariable String status) {
+    public ResponseEntity<List<LoanManagerDTO>> getLoansByStatusForApproval(@PathVariable String status) {
         LoanApplication.Status enumStatus = LoanApplication.Status.valueOf(status.toUpperCase());
         List<LoanApplication> loans = loanService.getLoansByStatus(enumStatus);
-        return ResponseEntity.ok(loans);
+        List<LoanManagerDTO> loanSummaries = loans.stream()
+                .map(loan -> new LoanManagerDTO(
+                        loan.getId(),
+                        loan.getAmount(),
+                        loan.getTerm(),
+                        loan.getPurpose(),
+                        loan.getStatus(),
+                        loan.getCreditScore(),
+                        loan.getAppliedDate(),
+                        loan.getDecisionDate(),
+                        loan.getApprovedAmount(),
+                        loan.getPaidAmount(),
+                        loan.getPendingAmount(),
+                        loan.getInterestRate(),
+                        loan.getUser().getId(),
+                        loan.getUser().getUsername(),
+                        loan.getUser().getEmail()
+                ))
+                .toList();
+        return ResponseEntity.ok(loanSummaries);
+    }
+
+    // Interest Rate Management endpoints
+    @GetMapping("/manager/interest-rates")
+    public ResponseEntity<List<InterestRate>> getInterestRates() {
+        List<InterestRate> rates = interestRateRepository.findAll();
+        return ResponseEntity.ok(rates);
+    }
+
+    @PostMapping("/manager/interest-rates")
+    public ResponseEntity<InterestRate> updateInterestRate(@RequestBody InterestRateUpdateRequest request) {
+        Optional<InterestRate> existingRate = interestRateRepository.findByPurpose(request.getPurpose().toLowerCase());
+        InterestRate rate;
+        if (existingRate.isPresent()) {
+            rate = existingRate.get();
+            rate.setRate(request.getRate());
+        } else {
+            rate = new InterestRate(request.getPurpose().toLowerCase(), request.getRate());
+        }
+        InterestRate saved = interestRateRepository.save(rate);
+        return ResponseEntity.ok(saved);
     }
 
     public static class LoanApplicationRequest {
@@ -281,5 +471,203 @@ public class LoanController {
         public void setTerm(Integer term) { this.term = term; }
         public String getPurpose() { return purpose; }
         public void setPurpose(String purpose) { this.purpose = purpose; }
+    }
+
+    public static class LoanSummaryDTO {
+        private Long id;
+        private BigDecimal amount;
+        private Integer term;
+        private String purpose;
+        private LoanApplication.Status status;
+        private Integer creditScore;
+        private LocalDateTime appliedDate;
+        private LocalDateTime decisionDate;
+        private BigDecimal approvedAmount;
+        private BigDecimal paidAmount;
+        private BigDecimal pendingAmount;
+        private BigDecimal interestRate;
+        private User user;
+        private User loanManager;
+        private User manager;
+
+        public LoanSummaryDTO(Long id, BigDecimal amount, Integer term, String purpose,
+                            LoanApplication.Status status, Integer creditScore, LocalDateTime appliedDate,
+                            LocalDateTime decisionDate, BigDecimal approvedAmount, BigDecimal paidAmount,
+                            BigDecimal pendingAmount, BigDecimal interestRate, User user, User loanManager, User manager) {
+            this.id = id;
+            this.amount = amount;
+            this.term = term;
+            this.purpose = purpose;
+            this.status = status;
+            this.creditScore = creditScore;
+            this.appliedDate = appliedDate;
+            this.decisionDate = decisionDate;
+            this.approvedAmount = approvedAmount;
+            this.paidAmount = paidAmount;
+            this.pendingAmount = pendingAmount;
+            this.interestRate = interestRate;
+            this.user = user;
+            this.loanManager = loanManager;
+            this.manager = manager;
+        }
+
+        // getters and setters
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public BigDecimal getAmount() { return amount; }
+        public void setAmount(BigDecimal amount) { this.amount = amount; }
+        public Integer getTerm() { return term; }
+        public void setTerm(Integer term) { this.term = term; }
+        public String getPurpose() { return purpose; }
+        public void setPurpose(String purpose) { this.purpose = purpose; }
+        public LoanApplication.Status getStatus() { return status; }
+        public void setStatus(LoanApplication.Status status) { this.status = status; }
+        public Integer getCreditScore() { return creditScore; }
+        public void setCreditScore(Integer creditScore) { this.creditScore = creditScore; }
+        public LocalDateTime getAppliedDate() { return appliedDate; }
+        public void setAppliedDate(LocalDateTime appliedDate) { this.appliedDate = appliedDate; }
+        public LocalDateTime getDecisionDate() { return decisionDate; }
+        public void setDecisionDate(LocalDateTime decisionDate) { this.decisionDate = decisionDate; }
+        public BigDecimal getApprovedAmount() { return approvedAmount; }
+        public void setApprovedAmount(BigDecimal approvedAmount) { this.approvedAmount = approvedAmount; }
+        public BigDecimal getPaidAmount() { return paidAmount; }
+        public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
+        public BigDecimal getPendingAmount() { return pendingAmount; }
+        public void setPendingAmount(BigDecimal pendingAmount) { this.pendingAmount = pendingAmount; }
+        public BigDecimal getInterestRate() { return interestRate; }
+        public void setInterestRate(BigDecimal interestRate) { this.interestRate = interestRate; }
+        public User getUser() { return user; }
+        public void setUser(User user) { this.user = user; }
+        public User getLoanManager() { return loanManager; }
+        public void setLoanManager(User loanManager) { this.loanManager = loanManager; }
+        public User getManager() { return manager; }
+        public void setManager(User manager) { this.manager = manager; }
+    }
+
+    public static class DocumentDTO {
+        private Long id;
+        private Long userId;
+        private Long loanApplicationId;
+        private String documentType;
+        private String fileName;
+        private String filePath;
+        private String contentType;
+        private Long fileSize;
+        private Document.Status status;
+
+        public DocumentDTO(Long id, Long userId, Long loanApplicationId, String documentType,
+                          String fileName, String filePath, String contentType, Long fileSize,
+                          Document.Status status) {
+            this.id = id;
+            this.userId = userId;
+            this.loanApplicationId = loanApplicationId;
+            this.documentType = documentType;
+            this.fileName = fileName;
+            this.filePath = filePath;
+            this.contentType = contentType;
+            this.fileSize = fileSize;
+            this.status = status;
+        }
+
+        // getters and setters
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public Long getUserId() { return userId; }
+        public void setUserId(Long userId) { this.userId = userId; }
+        public Long getLoanApplicationId() { return loanApplicationId; }
+        public void setLoanApplicationId(Long loanApplicationId) { this.loanApplicationId = loanApplicationId; }
+        public String getDocumentType() { return documentType; }
+        public void setDocumentType(String documentType) { this.documentType = documentType; }
+        public String getFileName() { return fileName; }
+        public void setFileName(String fileName) { this.fileName = fileName; }
+        public String getFilePath() { return filePath; }
+        public void setFilePath(String filePath) { this.filePath = filePath; }
+        public String getContentType() { return contentType; }
+        public void setContentType(String contentType) { this.contentType = contentType; }
+        public Long getFileSize() { return fileSize; }
+        public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+        public Document.Status getStatus() { return status; }
+        public void setStatus(Document.Status status) { this.status = status; }
+    }
+
+    public static class LoanManagerDTO {
+        private Long id;
+        private BigDecimal amount;
+        private Integer term;
+        private String purpose;
+        private LoanApplication.Status status;
+        private Integer creditScore;
+        private LocalDateTime appliedDate;
+        private LocalDateTime decisionDate;
+        private BigDecimal approvedAmount;
+        private BigDecimal paidAmount;
+        private BigDecimal pendingAmount;
+        private BigDecimal interestRate;
+        private Long userId;
+        private String username;
+        private String userEmail;
+
+        public LoanManagerDTO(Long id, BigDecimal amount, Integer term, String purpose,
+                            LoanApplication.Status status, Integer creditScore, LocalDateTime appliedDate,
+                            LocalDateTime decisionDate, BigDecimal approvedAmount, BigDecimal paidAmount,
+                            BigDecimal pendingAmount, BigDecimal interestRate, Long userId, String username, String userEmail) {
+            this.id = id;
+            this.amount = amount;
+            this.term = term;
+            this.purpose = purpose;
+            this.status = status;
+            this.creditScore = creditScore;
+            this.appliedDate = appliedDate;
+            this.decisionDate = decisionDate;
+            this.approvedAmount = approvedAmount;
+            this.paidAmount = paidAmount;
+            this.pendingAmount = pendingAmount;
+            this.interestRate = interestRate;
+            this.userId = userId;
+            this.username = username;
+            this.userEmail = userEmail;
+        }
+
+        // getters and setters
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public BigDecimal getAmount() { return amount; }
+        public void setAmount(BigDecimal amount) { this.amount = amount; }
+        public Integer getTerm() { return term; }
+        public void setTerm(Integer term) { this.term = term; }
+        public String getPurpose() { return purpose; }
+        public void setPurpose(String purpose) { this.purpose = purpose; }
+        public LoanApplication.Status getStatus() { return status; }
+        public void setStatus(LoanApplication.Status status) { this.status = status; }
+        public Integer getCreditScore() { return creditScore; }
+        public void setCreditScore(Integer creditScore) { this.creditScore = creditScore; }
+        public LocalDateTime getAppliedDate() { return appliedDate; }
+        public void setAppliedDate(LocalDateTime appliedDate) { this.appliedDate = appliedDate; }
+        public LocalDateTime getDecisionDate() { return decisionDate; }
+        public void setDecisionDate(LocalDateTime decisionDate) { this.decisionDate = decisionDate; }
+        public BigDecimal getApprovedAmount() { return approvedAmount; }
+        public void setApprovedAmount(BigDecimal approvedAmount) { this.approvedAmount = approvedAmount; }
+        public BigDecimal getPaidAmount() { return paidAmount; }
+        public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
+        public BigDecimal getPendingAmount() { return pendingAmount; }
+        public void setPendingAmount(BigDecimal pendingAmount) { this.pendingAmount = pendingAmount; }
+        public BigDecimal getInterestRate() { return interestRate; }
+        public void setInterestRate(BigDecimal interestRate) { this.interestRate = interestRate; }
+        public Long getUserId() { return userId; }
+        public void setUserId(Long userId) { this.userId = userId; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+        public String getUserEmail() { return userEmail; }
+        public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
+    }
+
+    public static class InterestRateUpdateRequest {
+        private String purpose;
+        private BigDecimal rate;
+
+        public String getPurpose() { return purpose; }
+        public void setPurpose(String purpose) { this.purpose = purpose; }
+        public BigDecimal getRate() { return rate; }
+        public void setRate(BigDecimal rate) { this.rate = rate; }
     }
 }

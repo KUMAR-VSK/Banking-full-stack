@@ -45,6 +45,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/loan-manager/**").hasAnyRole("LOAN_MANAGER", "ADMIN")
                 .requestMatchers("/api/manager/**").hasAnyRole("MANAGER", "ADMIN")
+                .requestMatchers("/manifest.json", "/favicon.ico", "/static/**", "/assets/**").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

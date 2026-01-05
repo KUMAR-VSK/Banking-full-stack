@@ -42,18 +42,18 @@ public class LoanService {
         application.setAppliedDate(LocalDateTime.now());
         application.setDocumentsVerified(false);
 
-        // Set interest rate based on purpose
-        BigDecimal interestRate = creditScoringService.getInterestRate(purpose);
-        application.setInterestRate(interestRate);
-
         // Calculate credit score
-        int creditScore = creditScoringService.calculateCreditScore(amount, term, purpose);
+        int creditScore = creditScoringService.calculateCreditScore(user, amount, term, purpose);
         application.setCreditScore(creditScore);
+
+        // Set interest rate based on purpose and credit score
+        BigDecimal interestRate = creditScoringService.getInterestRate(purpose, creditScore);
+        application.setInterestRate(interestRate);
 
         LoanApplication saved = loanApplicationRepository.save(application);
 
         // Link existing documents to this loan application
-        List<Document> userDocuments = documentRepository.findByUserIdAndLoanApplicationIdIsNull(user.getId());
+        List<Document> userDocuments = documentRepository.findByUserIdAndLoanApplicationIsNull(user.getId());
         for (Document document : userDocuments) {
             document.setLoanApplication(saved);
             documentRepository.save(document);
@@ -66,7 +66,7 @@ public class LoanService {
 
 
     @Transactional
-    public LoanApplication rejectLoan(Long applicationId) {
+    public LoanApplication rejectLoan(Long applicationId, User manager) {
         LoanApplication application = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found"));
 
@@ -76,6 +76,7 @@ public class LoanService {
 
         application.setStatus(LoanApplication.Status.REJECTED);
         application.setDecisionDate(LocalDateTime.now());
+        application.setManager(manager);
 
         LoanApplication saved = loanApplicationRepository.save(application);
 
@@ -85,7 +86,7 @@ public class LoanService {
     }
 
     @Transactional
-    public LoanApplication verifyLoanApplication(Long applicationId) {
+    public LoanApplication verifyLoanApplication(Long applicationId, User loanManager) {
         LoanApplication application = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found"));
 
@@ -95,6 +96,7 @@ public class LoanService {
 
         application.setStatus(LoanApplication.Status.VERIFIED);
         application.setDocumentsVerified(true);
+        application.setLoanManager(loanManager);
 
         LoanApplication saved = loanApplicationRepository.save(application);
 
@@ -104,7 +106,27 @@ public class LoanService {
     }
 
     @Transactional
-    public LoanApplication approveLoan(Long applicationId) {
+    public LoanApplication rejectLoanApplication(Long applicationId, User loanManager) {
+        LoanApplication application = loanApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Application not found"));
+
+        if (application.getStatus() != LoanApplication.Status.APPLIED) {
+            throw new RuntimeException("Application is not in APPLIED status");
+        }
+
+        application.setStatus(LoanApplication.Status.REJECTED);
+        application.setDecisionDate(LocalDateTime.now());
+        application.setLoanManager(loanManager);
+
+        LoanApplication saved = loanApplicationRepository.save(application);
+
+        notificationService.sendLoanStatusUpdate(application.getUser().getId(), "REJECTED");
+
+        return saved;
+    }
+
+    @Transactional
+    public LoanApplication approveLoan(Long applicationId, User manager) {
         LoanApplication application = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found"));
 
@@ -116,6 +138,7 @@ public class LoanService {
 
         application.setStatus(LoanApplication.Status.APPROVED);
         application.setDecisionDate(LocalDateTime.now());
+        application.setManager(manager);
 
         // Set approval details - use the interest rate that was set during application
         application.setApprovedAmount(application.getAmount());

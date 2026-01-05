@@ -1,5 +1,6 @@
 package com.example.Bank_Loan_Management.entity;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
@@ -39,6 +40,18 @@ public class User {
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
+
+    // Additional fields for credit scoring
+    private BigDecimal annualIncome;
+    private String employmentStatus; // EMPLOYED, SELF_EMPLOYED, UNEMPLOYED
+    private Integer age;
+    private String maritalStatus; // SINGLE, MARRIED, DIVORCED
+    private BigDecimal existingDebts; // Total outstanding debts
+    private Integer creditHistoryLength; // in years
+    private Integer numberOfLatePayments;
+    private BigDecimal creditUtilization; // percentage (e.g., 30.5 for 30.5%)
+    private Integer numberOfCreditInquiries;
+    private String creditMix; // e.g., "mortgage,credit_card,auto"
 
     public enum Role {
         USER, LOAN_MANAGER, MANAGER, ADMIN

@@ -117,16 +117,31 @@ public class DocumentService {
         return saved;
     }
 
+    public void associateDocumentsWithLoan(User user, LoanApplication application) {
+        List<Document> userDocuments = documentRepository.findByUser(user);
+        for (Document doc : userDocuments) {
+            if (doc.getLoanApplication() == null) {
+                doc.setLoanApplication(application);
+                documentRepository.save(doc);
+            }
+        }
+    }
+
     public List<Document> getAllDocuments() {
-        return documentRepository.findAll();
+        List<Document> documents = documentRepository.findAll();
+        System.out.println("DocumentService.getAllDocuments() found " + documents.size() + " documents");
+        return documents;
     }
 
     public Resource downloadDocument(Long documentId) throws IOException {
+        System.out.println("DocumentService.downloadDocument() called for ID: " + documentId);
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found"));
+        System.out.println("Found document: " + document.getFileName() + ", path: " + document.getFilePath());
 
         Path filePath = Paths.get(document.getFilePath());
         Resource resource = new UrlResource(filePath.toUri());
+        System.out.println("File path exists: " + filePath.toFile().exists() + ", resource exists: " + resource.exists() + ", readable: " + resource.isReadable());
 
         if (resource.exists() || resource.isReadable()) {
             return resource;

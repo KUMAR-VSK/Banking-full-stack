@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -34,7 +36,16 @@ public class LoanApplication {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne
+    @JoinColumn(name = "loan_manager_id")
+    private User loanManager;
+
+    @ManyToOne
+    @JoinColumn(name = "manager_id")
+    private User manager;
+
     @OneToMany(mappedBy = "loanApplication")
+    @JsonIgnore
     private List<Document> documents;
 
     @Column(nullable = false)

@@ -1,5 +1,7 @@
 package com.example.Bank_Loan_Management.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -29,8 +31,14 @@ public class Document {
     @JoinColumn(name = "loan_application_id")
     private LoanApplication loanApplication;
 
+    @JsonIgnore
+    public LoanApplication getLoanApplication() {
+        return loanApplication;
+    }
+
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore
     private User user;
 
     @Column(nullable = false)
@@ -50,6 +58,11 @@ public class Document {
 
     @Enumerated(EnumType.STRING)
     private Status status;
+
+    // Custom getter to expose loan application ID in JSON
+    public Long getLoanApplicationId() {
+        return loanApplication != null ? loanApplication.getId() : null;
+    }
 
     public enum Status {
         UPLOADED, VERIFIED, REJECTED

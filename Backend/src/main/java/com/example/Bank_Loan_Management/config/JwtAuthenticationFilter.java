@@ -49,15 +49,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-            
-            // Create authorities based on the role from JWT token
+
+            // If role is missing from JWT (for backward compatibility), get it from database
+            if (role == null || role.trim().isEmpty()) {
+                // Extract role from user details - UserDetailsServiceImpl creates roles with .roles(user.getRole().name())
+                // which automatically prefixes ROLE_, so we need to extract the actual role
+                String userRole = userDetails.getAuthorities().stream()
+                    .findFirst()
+                    .map(auth -> auth.getAuthority().replace("ROLE_", ""))
+                    .orElse("USER");
+                role = userRole;
+            }
+
+            // Create authorities based on the role
             GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role);
             UserDetails customUserDetails = new org.springframework.security.core.userdetails.User(
                 userDetails.getUsername(),
                 userDetails.getPassword(),
                 Collections.singletonList(authority)
             );
-            
+
             if (jwtUtil.validateToken(jwt, userDetails.getUsername())) {
                 UsernamePasswordAuthenticationToken authenticationToken =
                         new UsernamePasswordAuthenticationToken(customUserDetails, null, customUserDetails.getAuthorities());
